@@ -1,0 +1,7 @@
+numpy
+plotly
+scikit-image
+streamlit
+streamlit-extras
+stqdm
+tqdm
