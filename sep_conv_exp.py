@@ -142,11 +142,16 @@ def train_model(model, kernel, epochs=300):
 
 
 s = int(input('Choose a filter size\n'))
-ng = s * 2
+n = int(
+    input(
+        'Choose a multiplier for the number of Gaussians between 2 and 4'
+    )
+)
+ng = s * n
 savename = f'S{s}_NG{ng}.csv'
 
 with open(savename, "w") as f:
-    pass
+    f.write('S, NG, H, V, MSE, Params\n')
 
 for h in range(1, s+1):
     for v in range(1, s+1):
