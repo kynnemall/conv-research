@@ -148,7 +148,7 @@ n = int(
     )
 )
 ng = s * n
-savename = f'S{s}_NG{ng}.csv'
+savename = f'experiments/{s}x{s}_{ng}Gaussians.csv'
 
 with open(savename, "w") as f:
     f.write('S, NG, H, V, MSE, Params\n')
@@ -157,6 +157,7 @@ for h in range(1, s+1):
     for v in range(1, s+1):
         print(f'Working on {h}H and {v}V')
         k = generate_kernel(ng, s)
+        np.save(k, savename.replace('.csv', '_kernel.npy'))
         model = sep_conv_model(s, h, v)
         params = model.count_params()
         final_mse = train_model(model, k)
