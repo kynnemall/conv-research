@@ -144,20 +144,20 @@ def train_model(model, kernel, epochs=300):
 s = int(input('Choose a filter size\n'))
 n = int(
     input(
-        'Choose a multiplier for the number of Gaussians between 2 and 4'
+        'Choose a multiplier for the number of Gaussians between 2 and 4\n'
     )
 )
 ng = s * n
 savename = f'experiments/{s}x{s}_{ng}Gaussians.csv'
+k = generate_kernel(ng, s)
+np.save(savename.replace('.csv', '_kernel.npy'), k)
 
 with open(savename, "w") as f:
-    f.write('S, NG, H, V, MSE, Params\n')
+    f.write('S,NG,H,V,MSE,Params\n')
 
-for h in range(1, s+1):
-    for v in range(1, s+1):
+for h in range(1, s // 2 + 2):
+    for v in range(1, s // 2 + 2):
         print(f'Working on {h}H and {v}V')
-        k = generate_kernel(ng, s)
-        np.save(k, savename.replace('.csv', '_kernel.npy'))
         model = sep_conv_model(s, h, v)
         params = model.count_params()
         final_mse = train_model(model, k)
