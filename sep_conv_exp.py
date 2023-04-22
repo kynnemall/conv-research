@@ -6,10 +6,11 @@ Created on Wed Apr 19 18:17:36 2023
 @author: martin
 """
 
+import os
 import numpy as np
 from skimage import data
 from scipy import signal
-from tensorflow.keras import layers, models, optimizers, callbacks
+from tensorflow.keras import layers, models, optimizers
 
 
 def my_conv2d(image, kernel):
@@ -115,7 +116,7 @@ def sep_conv_model(filter_size, h_filters, v_filters):
     return model
 
 
-def train_model(model, kernel, epochs=300):
+def train_model(model, kernel, savename, epochs=300):
     # prep training data
     image = data.cat().astype(np.float32)
     image = image / 255.
@@ -137,6 +138,7 @@ def train_model(model, kernel, epochs=300):
     )
 
     error = model.evaluate(image, conv_image)
+    model.save(savename)
 
     return error
 
@@ -147,9 +149,20 @@ n = int(
         'Choose a multiplier for the number of Gaussians between 2 and 4\n'
     )
 )
+
 ng = s * n
-savename = f'experiments/{s}x{s}_{ng}Gaussians.csv'
+savename = f'{s}x{s}_{ng}Gaussians.csv'
 k = generate_kernel(ng, s)
+
+# determine which run this is
+os.chdir('experiments')
+base = f'{s}x{s}'
+this_run = sum([1 for fldr in os.listdir() if fldr.startswith(base)]) + 1
+fldr = f'{base}_{ng}Gaussians_run{this_run:02}'
+os.mkdir(fldr)
+os.chdir(fldr)
+
+# save data
 np.save(savename.replace('.csv', '_kernel.npy'), k)
 
 with open(savename, "w") as f:
@@ -160,6 +173,7 @@ for h in range(1, s // 2 + 2):
         print(f'Working on {h}H and {v}V')
         model = sep_conv_model(s, h, v)
         params = model.count_params()
-        final_mse = train_model(model, k)
+        modelname = f'{s}x{s}_{ng}Gaussians_{h}H-{v}V.h5'
+        final_mse = train_model(model, k, modelname)
         with open(savename, "a") as f:
             f.write(f'{s}, {ng}, {h}, {v}, {final_mse:.2f}, {params}\n')
