@@ -12,6 +12,23 @@ from skimage import data
 from scipy import signal
 from tensorflow.keras import layers, models, optimizers
 
+def make_conv_image(image, kernel, filter_size):
+    # format kernel
+    tensor = kernel[:, :, np.newaxis]
+    tensor = np.repeat(tensor, 3, axis=2)
+    tensor = np.expand_dims(tensor, -1)
+
+    # define conv and set weights
+    conv = layers.Conv2D(1, (filter_size, filter_size), activation='relu',
+                      padding='same', use_bias=False, weights=[tensor])   
+
+    # count parameters
+    conv.build((300, 451, 3))
+    params = conv.count_params()
+
+    # pass image through conv layer
+    conv_image = conv(image)
+    return conv_image, params
 
 def my_conv2d(image, kernel):
     # Apply the convolution to each channel separately
@@ -106,25 +123,21 @@ def sep_conv_model(filter_size, h_filters, v_filters):
     in_ = layers.Input(shape=(300, 451, 3))
     h = layers.Conv2D(h_filters, (1, filter_size), activation='relu',
                       padding='same')(in_)
-    h = layers.Conv1D(3, 1, activation='relu')(h)
     v = layers.Conv2D(v_filters, (filter_size, 1), activation='relu',
                       padding='same')(in_)
-    v = layers.Conv1D(3, 1, activation='relu')(v)
-    out = layers.Add()([h, v])
+    concat = layers.Concatenate()([h, v])
+    out = layers.Conv2D(1, 1, activation=None, padding='same')(concat)
 
     model = models.Model(inputs=in_, outputs=out)
     return model
 
 
-def train_model(model, kernel, savename, epochs=300):
+def train_model(model, kernel, filter_size, savename, epochs=300):
     # prep training data
     image = data.cat().astype(np.float32)
     image = image / 255.
-    conv_image = my_conv2d(image, kernel)
-    conv_image = np.expand_dims(conv_image, axis=0)
     image = np.expand_dims(image, axis=0)
-
-    assert conv_image.shape == image.shape, f'{conv_image.shape}, {image.shape}'
+    conv_image, base_params = make_conv_image(image, kernel, filter_size)
 
     # set up training loop
     # reducelr = callbacks.ReduceLROnPlateau(
@@ -140,9 +153,9 @@ def train_model(model, kernel, savename, epochs=300):
     error = model.evaluate(image, conv_image)
     model.save(savename)
 
-    return error
+    return error, base_params
 
-
+# parameters for the experiment
 s = int(input('Choose a filter size\n'))
 n = int(
     input(
@@ -154,11 +167,17 @@ ng = s * n
 savename = f'{s}x{s}_{ng}Gaussians.csv'
 k = generate_kernel(ng, s)
 
-# determine which run this is
+# make experiment folder
 os.chdir('experiments')
+exp_fldr = savename.split('.')[0]
+if not os.path.exists(exp_fldr):
+    os.mkdir(exp_fldr)
+os.chdir(exp_fldr)
+
+# determine which run this is
 base = f'{s}x{s}'
-this_run = sum([1 for fldr in os.listdir() if fldr.startswith(base)]) + 1
-fldr = f'{base}_{ng}Gaussians_run{this_run:02}'
+this_run = sum([1 for fldr in os.listdir()]) + 1
+fldr = f'run{this_run:02}'
 os.mkdir(fldr)
 os.chdir(fldr)
 
@@ -166,7 +185,7 @@ os.chdir(fldr)
 np.save(savename.replace('.csv', '_kernel.npy'), k)
 
 with open(savename, "w") as f:
-    f.write('S,NG,H,V,MSE,Params\n')
+    f.write('S,NG,H,V,MSE,Params,BaseParams\n')
 
 for h in range(1, s // 2 + 2):
     for v in range(1, s // 2 + 2):
@@ -174,6 +193,7 @@ for h in range(1, s // 2 + 2):
         model = sep_conv_model(s, h, v)
         params = model.count_params()
         modelname = f'{s}x{s}_{ng}Gaussians_{h}H-{v}V.h5'
-        final_mse = train_model(model, k, modelname)
+        final_mse, base_params = train_model(model, k, s, modelname)
         with open(savename, "a") as f:
-            f.write(f'{s}, {ng}, {h}, {v}, {final_mse:.2f}, {params}\n')
+            f.write(f'{s},{ng},{h},{v},{final_mse:.2f},{params},{base_params}\n')
+os.chdir('../..')
