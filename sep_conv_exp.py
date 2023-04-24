@@ -12,6 +12,7 @@ from skimage import data
 from scipy import signal
 from tensorflow.keras import layers, models, optimizers
 
+
 def make_conv_image(image, kernel, filter_size):
     # format kernel
     tensor = kernel[:, :, np.newaxis]
@@ -20,15 +21,16 @@ def make_conv_image(image, kernel, filter_size):
 
     # define conv and set weights
     conv = layers.Conv2D(1, (filter_size, filter_size), activation='relu',
-                      padding='same', use_bias=False, weights=[tensor])   
+                         padding='same', use_bias=False, weights=[tensor])
 
     # count parameters
-    conv.build((300, 451, 3))
+    conv.build((512, 512, 1))
     params = conv.count_params()
 
     # pass image through conv layer
     conv_image = conv(image)
     return conv_image, params
+
 
 def my_conv2d(image, kernel):
     # Apply the convolution to each channel separately
@@ -120,7 +122,7 @@ def sep_conv_model(filter_size, h_filters, v_filters):
         Model with separate 1D convolutions
 
     """
-    in_ = layers.Input(shape=(300, 451, 3))
+    in_ = layers.Input(shape=(512, 512, 1))
     h = layers.Conv2D(h_filters, (1, filter_size), activation='relu',
                       padding='same')(in_)
     v = layers.Conv2D(v_filters, (filter_size, 1), activation='relu',
@@ -132,11 +134,12 @@ def sep_conv_model(filter_size, h_filters, v_filters):
     return model
 
 
-def train_model(model, kernel, filter_size, savename, epochs=300):
+def train_model(model, kernel, filter_size, savename, epochs=500):
     # prep training data
-    image = data.cat().astype(np.float32)
+    image = data.camera().astype(np.float32)
     image = image / 255.
-    image = np.expand_dims(image, axis=0)
+    image = np.expand_dims(image, axis=0)  # (1, 512, 512)
+    image = np.expand_dims(image, axis=-1)  # (1, 512, 512, 1)
     conv_image, base_params = make_conv_image(image, kernel, filter_size)
 
     # set up training loop
@@ -145,15 +148,19 @@ def train_model(model, kernel, filter_size, savename, epochs=300):
     # )
     model.compile(optimizers.Adam(learning_rate=0.003), loss='mse')
 
-    model.fit(
+    history = model.fit(
         image, conv_image, epochs=epochs, batch_size=1,
         # callbacks=[reducelr]
     )
+    loss = history.history['loss']
+    loss_savename = savename.replace('_model.h5', '_mse.txt')
+    np.savetxt(loss_savename, np.array(loss))
 
     error = model.evaluate(image, conv_image)
     model.save(savename)
 
     return error, base_params
+
 
 # parameters for the experiment
 s = int(input('Choose a filter size\n'))
@@ -192,7 +199,7 @@ for h in range(1, s // 2 + 2):
         print(f'Working on {h}H and {v}V')
         model = sep_conv_model(s, h, v)
         params = model.count_params()
-        modelname = f'{s}x{s}_{ng}Gaussians_{h}H-{v}V.h5'
+        modelname = f'{h}H-{v}V_model.h5'
         final_mse, base_params = train_model(model, k, s, modelname)
         with open(savename, "a") as f:
             f.write(f'{s},{ng},{h},{v},{final_mse:.2f},{params},{base_params}\n')
