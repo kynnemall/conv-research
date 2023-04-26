@@ -7,9 +7,12 @@ Created on Wed Apr 19 18:17:36 2023
 """
 
 import os
+import sys
 import numpy as np
-from skimage import data
 from scipy import signal
+from skimage import data
+from datetime import timedelta
+from timeit import default_timer as timer
 from tensorflow.keras import layers, models, optimizers
 
 
@@ -103,9 +106,9 @@ def generate_kernel(n_kernels, filter_size):
 
 def sep_conv_model(filter_size, h_filters, v_filters):
     """
-    Initialize a model with 1 layer of separate convolutions for height and 
+    Initialize a model with 1 layer of separate convolutions for height and
     width which should re-capitulate a more complex 2D kernel with less
-    parameters    
+    parameters
 
     Parameters
     ----------
@@ -124,11 +127,12 @@ def sep_conv_model(filter_size, h_filters, v_filters):
     """
     in_ = layers.Input(shape=(512, 512, 1))
     h = layers.Conv2D(h_filters, (1, filter_size), activation='relu',
-                      padding='same')(in_)
+                      padding='same', use_bias=False)(in_)
     v = layers.Conv2D(v_filters, (filter_size, 1), activation='relu',
-                      padding='same')(in_)
+                      padding='same', use_bias=False)(in_)
     concat = layers.Concatenate()([h, v])
-    out = layers.Conv2D(1, 1, activation=None, padding='same')(concat)
+    out = layers.Conv2D(1, 1, activation=None, padding='same',
+                        use_bias=False)(concat)
 
     model = models.Model(inputs=in_, outputs=out)
     return model
@@ -146,10 +150,11 @@ def train_model(model, kernel, filter_size, savename, epochs=500):
     # reducelr = callbacks.ReduceLROnPlateau(
     #     'loss', patience=20, min_delta=0.05
     # )
+
     model.compile(optimizers.Adam(learning_rate=0.003), loss='mse')
 
     history = model.fit(
-        image, conv_image, epochs=epochs, batch_size=1,
+        image, conv_image, epochs=epochs, batch_size=1, verbose=2,
         # callbacks=[reducelr]
     )
     loss = history.history['loss']
@@ -162,45 +167,47 @@ def train_model(model, kernel, filter_size, savename, epochs=500):
     return error, base_params
 
 
-# parameters for the experiment
-s = int(input('Choose a filter size\n'))
-n = int(
-    input(
-        'Choose a multiplier for the number of Gaussians between 2 and 4\n'
-    )
-)
+if __name__ == '__main__':
+    # parameters for the experiment
+    # filter size and # of Gaussians to use in the kernel
+    s, n = [int(arg) for arg in sys.argv[1:]]
 
-ng = s * n
-savename = f'{s}x{s}_{ng}Gaussians.csv'
-k = generate_kernel(ng, s)
+    ng = s * n
+    savename = f'{s}x{s}_{ng}Gaussians.csv'
+    k = generate_kernel(ng, s)
 
-# make experiment folder
-os.chdir('experiments')
-exp_fldr = savename.split('.')[0]
-if not os.path.exists(exp_fldr):
-    os.mkdir(exp_fldr)
-os.chdir(exp_fldr)
+    # make experiment folder
+    os.chdir('experiments')
+    exp_fldr = savename.split('.')[0]
+    if not os.path.exists(exp_fldr):
+        os.mkdir(exp_fldr)
+    os.chdir(exp_fldr)
 
-# determine which run this is
-base = f'{s}x{s}'
-this_run = sum([1 for fldr in os.listdir()]) + 1
-fldr = f'run{this_run:02}'
-os.mkdir(fldr)
-os.chdir(fldr)
+    # determine which run this is
+    base = f'{s}x{s}'
+    this_run = sum([1 for fldr in os.listdir()]) + 1
+    fldr = f'run{this_run:02}'
+    os.mkdir(fldr)
+    os.chdir(fldr)
 
-# save data
-np.save(savename.replace('.csv', '_kernel.npy'), k)
+    # save data
+    np.save(savename.replace('.csv', '_kernel.npy'), k)
 
-with open(savename, "w") as f:
-    f.write('S,NG,H,V,MSE,Params,BaseParams\n')
+    with open(savename, "w") as f:
+        f.write('S,NG,H,V,MSE,Params,BaseParams\n')
 
-for h in range(1, s // 2 + 2):
-    for v in range(1, s // 2 + 2):
-        print(f'Working on {h}H and {v}V')
-        model = sep_conv_model(s, h, v)
-        params = model.count_params()
-        modelname = f'{h}H-{v}V_model.h5'
-        final_mse, base_params = train_model(model, k, s, modelname)
-        with open(savename, "a") as f:
-            f.write(f'{s},{ng},{h},{v},{final_mse:.2f},{params},{base_params}\n')
-os.chdir('../..')
+    start = timer()
+    for h in range(1, s // 2 + 2):
+        for v in range(1, s // 2 + 2):
+            print(f'Working on {h}H and {v}V')
+            model = sep_conv_model(s, h, v)
+            params = model.count_params()
+            modelname = f'{h}H-{v}V_model.h5'
+            final_mse, base_params = train_model(model, k, s, modelname)
+            with open(savename, "a") as f:
+                f.write(
+                    f'{s},{ng},{h},{v},{final_mse:3e},{params},{base_params}\n'
+                )
+
+    end = timer()
+    print(f'Time elapsed: {timedelta(seconds=end-start)}')
